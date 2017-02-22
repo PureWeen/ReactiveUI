@@ -45,61 +45,56 @@ namespace ReactiveUI.XamForms
                 var currentCount = previousCount.Skip(1);
 
                 d (Observable.Zip(previousCount, currentCount, (previous, current) => new { Delta = previous - current, Current = current })
-                    .Where(_ => !userInstigated)
-                    .Where(x => x.Delta > 0)
-                    .SelectMany(
-                        x =>
-                        {
+                   .Where(_ => !userInstigated)
+                   .Where(x => x.Delta > 0)
+                   .SelectMany(
+                       async x =>
+                       {
                             // XF doesn't provide a means of navigating back more than one screen at a time apart from navigating right back to the root page
                             // since we want as sensible an animation as possible, we pop to root if that makes sense. Otherwise, we pop each individual
                             // screen until the delta is made up, animating only the last one
                             var popToRoot = x.Current == 1;
                             currentlyPopping = true;
 
-                            try
-                            {
-                                if (popToRoot)
-                                {
-                                    this.PopToRootAsync(true)
-                                        .ToObservable();
-                                }
-                                else
-                                {
-                                    for (var i = 0; i < x.Delta; ++i)
-                                    {
-                                        this.PopAsync(i == x.Delta - 1)
-                                            .ToObservable()
-                                            .Select(_ => Unit.Default);
-                                    }
-                                }
-                            }
-                            finally
-                            {
-                                currentlyPopping = false;
-                            }
+                           try
+                           {
+                               if (popToRoot)
+                               {
+                                   await this.PopToRootAsync(true);
+                               }
+                               else
+                               {
+                                   for (var i = 0; i < x.Delta; ++i)
+                                   {
+                                       await this.PopAsync(i == x.Delta - 1);
+                                   }
+                               }
+                           }
+                           finally
+                           {
+                               currentlyPopping = false;
+                               ((IViewFor)this.CurrentPage).ViewModel = Router.GetCurrentViewModel();
+                           }
 
-                            return Observable.Return(Unit.Default);
-                        })
-                    .Do(_ => ((IViewFor)this.CurrentPage).ViewModel = Router.GetCurrentViewModel())
-                    .Subscribe());
+                           return Unit.Default;
+                       })
+                   .Subscribe());
 
                 d(this.WhenAnyObservable(x => x.Router.Navigate)
                     .SelectMany(_ => PageForViewModel(Router.GetCurrentViewModel()))
-                    .SelectMany(x => {
+                    .SelectMany(async x => {
                         if (popToRootPending && this.Navigation.NavigationStack.Count > 0)
                         {
                             this.Navigation.InsertPageBefore(x, this.Navigation.NavigationStack[0]);
-                            this.PopToRootAsync()
-                                .ToObservable();
+                            await this.PopToRootAsync();
                         }
                         else
                         {
-                            this.PushAsync(x)
-                                .ToObservable();
+                            await this.PushAsync(x);
                         }
 
                         popToRootPending = false;
-                        return Observable.Return(Unit.Default);
+                        return x;
                     })
                     .Subscribe());
 
